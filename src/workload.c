@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <filesystem>
+#include <limits.h>
+#include <fcntl.h>
 
 int main(int argc, char* argv) {
 	char *dir = NULL;
@@ -33,10 +34,14 @@ int main(int argc, char* argv) {
 		}
 	}
 
-	FILE *fptr = fopen(dir, "wb");
+	char filepath[_MAX_PATH];
+	
+	snprintf(filepath, sizeof(filepath), "%stestfile.dat", dir);
+
+	int fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
 
 	if (strcmp(mode, "seqwrite") == 0) {
-		printf("KONTOLLLLLLL!!!!");
+		
 	}
 	else if (strcmp(mode, "randwrite") == 0) {
 
