@@ -8,6 +8,7 @@
 int main(int argc, char* argv) {
 	char *dir = NULL;
 	char *mode = NULL;
+	char *dev = NULL;
 
 	int size = 0;
 	int bs = 0;
@@ -17,17 +18,20 @@ int main(int argc, char* argv) {
 		if (strcmp(argv[i], "--dir") == 0) {
 			dir = argv[++i];
 		}
-		else if (strcmp(argv[++i], "--size") == 0) {
+		else if (strcmp(argv[i], "--size") == 0) {
 			size = atoi(argv[++i]);
 		}
 		else if (strcmp(argv[i], "--bs") == 0) {
 			bs = atoi(argv[++i]);
 		}
-		else if (strmp(argv[i], "--mode") == 0) {
+		else if (strcmp(argv[i], "--mode") == 0) {
 			mode = argv[++i];
 		}
-		else if (strmp(argv[i], "--fsync") == 0) {
+		else if (strcmp(argv[i], "--fsync") == 0) {
 			fsync = true;
+		}
+		else if (strcmp(argv[i], "--dev") == 0) {
+			dev = argv[++i];
 		}
 		else {
 			continue;
