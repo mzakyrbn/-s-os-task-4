@@ -58,11 +58,6 @@ static int ensure_file(const char *path, uint64_t size_bytes, size_t bsz) {
  * Write one CSV row per operation. This is the only place that touches the
  * iolib CSV writer: if your teammate names it differently, change it here.
  */
-static void log_latencies(const char *scenario, const uint64_t *lat, size_t n, size_t bsz) {
-	for (size_t i = 0; i < n; i++) {
-		csv_write_row(1, scenario, i, lat[i], bsz);
-	}
-}
 
 int main(int argc, char* argv) {
 	char *dir = NULL;
@@ -115,10 +110,31 @@ int main(int argc, char* argv) {
 	}
 
 	if (strcmp(mode, "seqwrite") == 0) {
-		
+		int writeCnt = 0;
+		size_t block_size = (size_t)bs * size;
+		char *buffer = malloc (block_size);
+
+		while (writeCnt + bs < size) {
+			write(fd, buffer, bs);
+			writeCnt += block_size;
+		}
+
+		if (isFsync && fsync(fd) == -1) {
+			perror("fsync");
+		}
 	}
 	else if (strcmp(mode, "randwrite") == 0) {
-
+		int writeCnt = 0;
+		size_t block_size = (size_t)bs * size;
+		char *buffer = malloc (block_size);
+		
+		while (writeCnt + block_size < size) {
+			pwrite(fd, buffer, bs, rand() % n_ops);
+		}
+		
+		if (isFsync && fsync(fd) == -1) {
+			perror("fsync");
+		}
 	}
 	else if (strcmp(mode, "seqread") == 0) {
 		if (ensure_file(filepath, (uint64_t)size * 1024 * 1024, bsz) != 0) {
