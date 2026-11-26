@@ -1,3 +1,6 @@
-const char* get_banner() {
-	return "=== KELOMPOK 06 - TUGAS MEMORI ===\n";
-}
+#ifndef BANNER_H
+#define BANNER_H
+
+void banner_call();
+
+#endif

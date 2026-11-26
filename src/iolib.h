@@ -52,7 +52,9 @@ int io_csv_write_row(FILE *file, uint64_t run_id, const char *scenario,
                      uint64_t op_index, uint64_t latency_ns, uint64_t bytes);
 
 /* Saves kernel, RAM, dirty settings, and lsblk output in logs/<group>-env-*.txt. */
-int io_write_environment_snapshot(const char *group, char *path,
-                                  size_t path_size);
+int io_write_environment_snapshot(const char *group, char *path,size_t path_size);
+
+/* ensuring file in the path is not empty */
+static int ensure_file(const char *path, uint64_t size_bytes, size_t bsz)
 
 #endif /* IOLIB_H */

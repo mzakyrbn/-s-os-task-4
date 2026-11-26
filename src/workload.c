@@ -6,58 +6,10 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <time.h>
-#include <unistd.h>
 #include <sys/stat.h>
+/*#include <unistd.h>*/
 #include "iolib.h"
-
-/*
- * Make sure the test file exists and is at least size_bytes long, so the
- * read modes have something to read. Writes bsz-sized blocks of non-zero
- * data, then fsyncs so the data is really on disk before we measure reads.
- * Returns 0 on success, -1 on error.
- */
-static int ensure_file(const char *path, uint64_t size_bytes, size_t bsz) {
-	struct stat st;
-	if (stat(path, &st) == 0 && (uint64_t)st.st_size >= size_bytes) {
-		return 0;
-	}
-
-	int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-	if (fd < 0) {
-		perror("ensure_file: open");
-		return -1;
-	}
-
-	char *buf = malloc(bsz);
-	if (buf == NULL) {
-		perror("ensure_file: malloc");
-		close(fd);
-		return -1;
-	}
-	memset(buf, 'A', bsz);
-
-	uint64_t written = 0;
-	while (written < size_bytes) {
-		ssize_t w = write(fd, buf, bsz);
-		if (w <= 0) {
-			perror("ensure_file: write");
-			free(buf);
-			close(fd);
-			return -1;
-		}
-		written += (uint64_t)w;
-	}
-
-	fsync(fd);
-	free(buf);
-	close(fd);
-	return 0;
-}
-
-/*
- * Write one CSV row per operation. This is the only place that touches the
- * iolib CSV writer: if your teammate names it differently, change it here.
- */
+#include "banner.h"
 
 int main(int argc, char* argv) {
 	char *dir = NULL;
@@ -66,7 +18,7 @@ int main(int argc, char* argv) {
 
 	int size = 0;
 	int bs = 0;
-	bool fsync = false;
+	bool isFsync = false;
 
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(argv[i], "--dir") == 0) {
@@ -82,7 +34,7 @@ int main(int argc, char* argv) {
 			mode = argv[++i];
 		}
 		else if (strcmp(argv[i], "--fsync") == 0) {
-			fsync = true;
+			isFsync = true;
 		}
 		else if (strcmp(argv[i], "--dev") == 0) {
 			dev = argv[++i];
@@ -103,39 +55,83 @@ int main(int argc, char* argv) {
 	uint64_t total_bytes = 0;
 	uint64_t elapsed_ns = 0;
 
+	uint64_t dirty_before;
+	uint64_t writeback_before;
+	uint64_t dirty_after;
+	uint64_t writeback_after;
+	io_device_stats dev_before;
+	io_device_stats dev_after;
+	io_latency_stats lat_stats;
+	char *filename;
+
 	/* Only the write modes truncate the file; read modes open it themselves. */
 	int fd = -1;
 	if (strcmp(mode, "seqwrite") == 0 || strcmp(mode, "randwrite") == 0) {
 		fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	}
 
+	/* check mode */
 	if (strcmp(mode, "seqwrite") == 0) {
-		int writeCnt = 0;
-		size_t block_size = (size_t)bs * size;
-		char *buffer = malloc (block_size);
+		uint64_t start = now_ns;
+		io_read_memory_metrics(&dirty_before, &writeback_before);
+		io_read_device_stats(dev, &dev_before);
 
-		while (writeCnt + bs < size) {
-			write(fd, buffer, bs);
-			writeCnt += block_size;
+		char *buffer = malloc (bsz);
+		memset(buffer, 0, bsz);
+
+		for (size_t i = 0; i < n_ops; i++) {
+			uint64_t before = now_ns();
+			write(fd, buffer, bsz);
+			total_bytes += bsz;
+			uint64_t after = now_ns();
+			lat[i] = after - before;
 		}
 
 		if (isFsync && fsync(fd) == -1) {
 			perror("fsync");
 		}
+		elapsed_ns = now_ns() - start;
+
+		io_read_memory_metrics(&dirty_after, &writeback_after);
+		io_read_device_stats(dev, &dev_after);
+
+		log_latencies("randread", lat, n_ops, bsz, filename);
+		free(buffer);
+		close(fd);
 	}
+
 	else if (strcmp(mode, "randwrite") == 0) {
-		int writeCnt = 0;
-		size_t block_size = (size_t)bs * size;
-		char *buffer = malloc (block_size);
+		uint64_t start = now_ns;
+		size_t random_block = (size_t)rand() % n_ops;
+		off_t offset = (off_t)random_block * (off_t)bsz;
+
+		io_read_memory_metrics(&dirty_before, &writeback_before);
+		io_read_device_stats(dev, &dev_before);
+
+		char *buffer = malloc (bsz);
+		memset(buffer, 0, bsz);
 		
-		while (writeCnt + block_size < size) {
-			pwrite(fd, buffer, bs, rand() % n_ops);
+		for (size_t i = 0; i < n_ops; i++) {
+			uint64_t before = now_ns();
+			pwrite(fd, buffer, bsz, rand() % offset);
+			total_bytes += bsz;
+			uint64_t after = now_ns();
+			lat[i] = after - before;
 		}
 		
 		if (isFsync && fsync(fd) == -1) {
 			perror("fsync");
 		}
+		elapsed_ns = now_ns() - start;
+
+		io_read_memory_metrics(&dirty_after, &writeback_after);
+		io_read_device_stats(dev, &dev_after);
+
+		log_latencies("randread", lat, n_ops, bsz, filename);
+		free(buffer);
+		close(fd);
 	}
+
 	else if (strcmp(mode, "seqread") == 0) {
 		if (ensure_file(filepath, (uint64_t)size * 1024 * 1024, bsz) != 0) {
 			return 1;
@@ -169,10 +165,11 @@ int main(int argc, char* argv) {
 		elapsed_ns = now_ns() - start;
 		n_ops = done;
 
-		log_latencies("seqread", lat, n_ops, bsz);
+		log_latencies("seqread", lat, n_ops, bsz, filename);
 		free(buf);
 		close(fd);
 	}
+
 	else if (strcmp(mode, "randread") == 0) {
 		if (ensure_file(filepath, (uint64_t)size * 1024 * 1024, bsz) != 0) {
 			return 1;
@@ -210,11 +207,42 @@ int main(int argc, char* argv) {
 		elapsed_ns = now_ns() - start;
 		n_ops = done;
 
-		log_latencies("randread", lat, n_ops, bsz);
+		log_latencies("randread", lat, n_ops, bsz, filename);
 		free(buf);
 		close(fd);
 	}
 	else {
 		printf("hrrruaaaah what are you doing blyat haiyaaah"); // nga ini ga di submit nanti w ganti
 	}
+
+	io_compute_latency_stats(lat, n_ops, &lat_stats);
+	double throughput = ((double)total_bytes / elapsed_ns) * 1e9 / (1024.0 * 1024.0);  
+	uint64_t elapsed_s = elapsed_ns * 1e9;
+	char dev_label[64];
+	snprintf(dev_label, sizeof(dev_label), "%s stat", dev);
+
+	uint64_t write_ios_delta = dev_after.write_ios - dev_before.write_ios;
+	uint64_t write_merges_delta = dev_after.write_merges - dev_before.write_merges;
+	uint64_t write_sectors_delta = dev_after.write_sectors - dev_before.write_sectors;
+
+	banner_call();
+	printf(
+		"\n[sebelum]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: write ios %llu | write merges %llu | write sectors %llu\n",
+		"dirty", dirty_before, "Writeback", writeback_before, dev_label,
+		dev_before.write_ios, dev_before.write_merges, dev_before.write_sectors  
+	);
+	printf(
+		"\n[sesudah]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: write ios %llu | write merges %llu | write sectors %llu\n",
+		"dirty", dirty_after, "Writeback", writeback_after, dev_label,
+		dev_after.write_ios, dev_after.write_merges, dev_after.write_sectors  
+	);
+	printf(
+		"selisih %-16s: write ios %+llu | write merges %+llu | write sectors %+llu",
+		dev, write_ios_delta, write_merges_delta, write_sectors_delta 
+	);
+	printf(
+		"%-16s: %PRIu64 s\n%-16s: %f MB/s\n%-16s: avg %llu | min %llu | max %llu | p50 %llu | p95 %llu | p99 %llu\n%-16s: %s",
+		"waktu eksekusi", dirty_after, "Throughput", writeback_after, "Latensi (ns)",
+		dev_after.write_ios, dev_after.write_merges, dev_after.write_sectors, filename
+	);
 }

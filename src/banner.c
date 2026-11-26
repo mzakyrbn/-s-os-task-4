@@ -2,5 +2,5 @@
 #include "banner.h"
 
 void banner_call() {
-	printf("%s", get_banner());
+	printf("=== Kelompok 06 | Tugas 4 - Filesystem dan I/O ===\n");
 }
