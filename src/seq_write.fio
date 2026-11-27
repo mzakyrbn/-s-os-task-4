@@ -1,0 +1,10 @@
+[global]
+direct=1
+bs=4k
+size=16M
+io_size=50M
+overwrite=1
+filename=/mnt/lab/testfile.bin
+
+[seq_write]
+rw=write

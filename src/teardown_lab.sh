@@ -17,4 +17,4 @@ if [ -e "$IMG" ]; then
     sudo rm -f "$IMG"
 fi
 
-echo "bish"
+echo "Teardown finish"

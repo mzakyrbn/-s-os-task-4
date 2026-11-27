@@ -26,4 +26,4 @@ sudo mount "$LOOP" "$MNT"
 TARGET_USER="${SUDO_USER:-$USER}"
 sudo chown "$TARGET_USER:$TARGET_USER" "$MNT"
 
-echo "Fuck: $LOOP (ext4) at $MNT"
+echo "Create: $LOOP at $MNT"
