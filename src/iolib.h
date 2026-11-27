@@ -7,9 +7,9 @@
 
 /* Block-device counters read from /sys/block/<device>/stat. */
 typedef struct {
-    uint64_t write_ios;
-    uint64_t write_merges;
-    uint64_t write_sectors;
+    uint64_t ios;
+    uint64_t merges;
+    uint64_t sectors;
 } io_device_stats;
 
 /* Latencies and percentiles are expressed in nanoseconds. */

@@ -10,8 +10,9 @@
 /*#include <unistd.h>*/
 #include "iolib.h"
 #include "banner.h"
+#include <inttypes.h>
 
-int main(int argc, char* argv) {
+int main(int argc, char* argv[]) {
 	char *dir = NULL;
 	char *mode = NULL;
 	char *dev = NULL;
@@ -46,7 +47,7 @@ int main(int argc, char* argv) {
 
 	char filepath[_MAX_PATH];
 	
-	snprintf(filepath, sizeof(filepath), "%stestfile.dat", dir);
+	snprintf(filepath, sizeof(filepath), "%s/testfile.dat", dir);
 
 	/* Filled by every mode, used by the shared reporting code afterwards. */
 	size_t bsz = (size_t)bs * 1024;
@@ -72,12 +73,12 @@ int main(int argc, char* argv) {
 
 	/* check mode */
 	if (strcmp(mode, "seqwrite") == 0) {
-		uint64_t start = now_ns;
 		io_read_memory_metrics(&dirty_before, &writeback_before);
 		io_read_device_stats(dev, &dev_before);
 
 		char *buffer = malloc (bsz);
 		memset(buffer, 0, bsz);
+		uint64_t start = now_ns();
 
 		for (size_t i = 0; i < n_ops; i++) {
 			uint64_t before = now_ns();
@@ -95,25 +96,24 @@ int main(int argc, char* argv) {
 		io_read_memory_metrics(&dirty_after, &writeback_after);
 		io_read_device_stats(dev, &dev_after);
 
-		log_latencies("randread", lat, n_ops, bsz, filename);
+		log_latencies("seqwrite", lat, n_ops, bsz, filename);
 		free(buffer);
 		close(fd);
 	}
 
 	else if (strcmp(mode, "randwrite") == 0) {
-		uint64_t start = now_ns;
-		size_t random_block = (size_t)rand() % n_ops;
-		off_t offset = (off_t)random_block * (off_t)bsz;
-
 		io_read_memory_metrics(&dirty_before, &writeback_before);
 		io_read_device_stats(dev, &dev_before);
 
 		char *buffer = malloc (bsz);
 		memset(buffer, 0, bsz);
+		uint64_t start = now_ns();
 		
 		for (size_t i = 0; i < n_ops; i++) {
+			size_t random_block = (size_t)rand() % n_ops;
+			off_t offset = (off_t)random_block * (off_t)bsz;
 			uint64_t before = now_ns();
-			pwrite(fd, buffer, bsz, rand() % offset);
+			pwrite(fd, buffer, bsz, offset);
 			total_bytes += bsz;
 			uint64_t after = now_ns();
 			lat[i] = after - before;
@@ -127,7 +127,7 @@ int main(int argc, char* argv) {
 		io_read_memory_metrics(&dirty_after, &writeback_after);
 		io_read_device_stats(dev, &dev_after);
 
-		log_latencies("randread", lat, n_ops, bsz, filename);
+		log_latencies("randwrite", lat, n_ops, bsz, filename);
 		free(buffer);
 		close(fd);
 	}
@@ -212,37 +212,38 @@ int main(int argc, char* argv) {
 		close(fd);
 	}
 	else {
-		printf("hrrruaaaah what are you doing blyat haiyaaah"); // nga ini ga di submit nanti w ganti
+		printf("Mode is not valid. Please choose between 'seqwrite', 'randwrite', 'seqread', and 'randread'.");
 	}
 
 	io_compute_latency_stats(lat, n_ops, &lat_stats);
 	double throughput = ((double)total_bytes / elapsed_ns) * 1e9 / (1024.0 * 1024.0);  
-	uint64_t elapsed_s = elapsed_ns * 1e9;
+	uint64_t elapsed_s = elapsed_ns / 1e9;
 	char dev_label[64];
 	snprintf(dev_label, sizeof(dev_label), "%s stat", dev);
 
-	uint64_t write_ios_delta = dev_after.write_ios - dev_before.write_ios;
-	uint64_t write_merges_delta = dev_after.write_merges - dev_before.write_merges;
-	uint64_t write_sectors_delta = dev_after.write_sectors - dev_before.write_sectors;
+	uint64_t ios_delta = dev_after.ios - dev_before.ios;
+	uint64_t merges_delta = dev_after.merges - dev_before.merges;
+	uint64_t sectors_delta = dev_after.sectors - dev_before.sectors;
+	char *action = (strstr(mode, "write") != NULL) ? "write" : "read";
 
 	banner_call();
 	printf(
-		"\n[sebelum]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: write ios %llu | write merges %llu | write sectors %llu\n",
-		"dirty", dirty_before, "Writeback", writeback_before, dev_label,
-		dev_before.write_ios, dev_before.write_merges, dev_before.write_sectors  
+		"\n[sebelum]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: %s ios %llu | %s merges %llu | %s sectors %llu\n",
+		"dirty", dirty_before, "Writeback", writeback_before, dev_label, action,
+		dev_before.ios, action, dev_before.merges, action, dev_before.sectors  
 	);
 	printf(
-		"\n[sesudah]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: write ios %llu | write merges %llu | write sectors %llu\n",
-		"dirty", dirty_after, "Writeback", writeback_after, dev_label,
-		dev_after.write_ios, dev_after.write_merges, dev_after.write_sectors  
+		"\n[sesudah]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: %s ios %llu | %s merges %llu | %s sectors %llu\n",
+		"dirty", dirty_after, "Writeback", writeback_after, dev_label, action,
+		dev_after.ios, action, dev_after.merges, action, dev_after.sectors  
 	);
 	printf(
-		"selisih %-16s: write ios %+llu | write merges %+llu | write sectors %+llu",
-		dev, write_ios_delta, write_merges_delta, write_sectors_delta 
+		"selisih %-16s: %s ios %+llu | %s merges %+llu | %s sectors %+llu",
+		dev, action, ios_delta, action, merges_delta, action, sectors_delta 
 	);
 	printf(
-		"%-16s: %PRIu64 s\n%-16s: %f MB/s\n%-16s: avg %llu | min %llu | max %llu | p50 %llu | p95 %llu | p99 %llu\n%-16s: %s",
-		"waktu eksekusi", dirty_after, "Throughput", writeback_after, "Latensi (ns)",
-		dev_after.write_ios, dev_after.write_merges, dev_after.write_sectors, filename
+		"%-16s: %" PRIu64 " s\n%-16s: %f MB/s\n%-16s: avg %llu | min %llu | max %llu | p50 %llu | p95 %llu | p99 %llu\n%-16s: %s",
+		"waktu eksekusi", elapsed_s, "Throughput", throughput, "Latensi (ns)", lat_stats.average_ns,
+		lat_stats.min_ns, lat_stats.max_ns, lat_stats.p50_ns, lat_stats.p95_ns, lat_stats.p99_ns, "Log", filename
 	);
 }

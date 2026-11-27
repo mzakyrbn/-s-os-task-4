@@ -127,7 +127,7 @@ int io_read_memory_metrics(uint64_t *dirty_kb, uint64_t *writeback_kb)
     return 0;
 }
 
-int io_read_device_stats(const char *device, io_device_stats *stats)
+int io_read_device_stats(const char *device, io_device_stats *stats, char *mode)
 {
     char path[PATH_MAX];
     char line[512];
@@ -168,9 +168,16 @@ int io_read_device_stats(const char *device, io_device_stats *stats)
         errno = EINVAL;
         return -1;
     }
-    stats->write_ios = (uint64_t)fields[4];
-    stats->write_merges = (uint64_t)fields[5];
-    stats->write_sectors = (uint64_t)fields[6];
+	if (strstr(mode, "write") != NULL) {
+		stats->ios = (uint64_t)fields[4];
+		stats->merges = (uint64_t)fields[5];
+		stats->sectors = (uint64_t)fields[6];
+	}
+	else {
+		stats->ios = (uint64_t)fields[0];
+		stats->merges = (uint64_t)fields[1];
+		stats->sectors = (uint64_t)fields[2];
+	}
     return 0;
 }
 
