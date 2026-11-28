@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <time.h>
+#include <fcntl.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -39,7 +40,7 @@ static int make_timestamp(char *buffer, size_t buffer_size)
     struct timespec now;
     struct tm local;
     char date_time[32];
-d
+
     if (clock_gettime(CLOCK_REALTIME, &now) != 0 ||
         localtime_r(&now.tv_sec, &local) == NULL ||
         strftime(date_time, sizeof(date_time), "%Y%m%d-%H%M%S", &local) == 0) {
@@ -228,8 +229,8 @@ int io_compute_latency_stats(const uint64_t *samples_ns, size_t count,
     return 0;
 }
 
-int io_csv_open(FILE **file, const char *group, const char *program,
-                const char *scenario, char *path, size_t path_size, char *filenameCopy)
+int io_csv_open(FILE **file, const char *group, const char *program, const char *scenario,
+	char *path, size_t path_size, char *fileNameCopy, size_t fileNameCopySize)
 {
     char group_name[64];
     char program_name[64];
@@ -248,7 +249,7 @@ int io_csv_open(FILE **file, const char *group, const char *program,
     safe_token(group, "XX", group_name, sizeof(group_name));
     safe_token(program, "program", program_name, sizeof(program_name));
     safe_token(scenario, "scenario", scenario_name, sizeof(scenario_name));
-	length = snprintf(filenameCopy, sizeof(filenameCopy), "logs/%s-%s-%s-%s.csv",
+	length = snprintf(fileNameCopy, fileNameCopySize, "logs/%s-%s-%s-%s.csv",
                       group_name, program_name, scenario_name, timestamp);
     length = snprintf(path, path_size, "logs/%s-%s-%s-%s.csv",
                       group_name, program_name, scenario_name, timestamp);
@@ -314,8 +315,8 @@ int io_csv_write_row(FILE *file, uint64_t run_id, const char *scenario,
     return 0;
 }
 
-void log_latencies(const char *scenario, const uint64_t *latencies_ns,
-                   size_t count, size_t bytes_per_operation, char *filenameCopy)
+void log_latencies(const char *scenario, const uint64_t *latencies_ns, size_t count,
+	 			   size_t bytes_per_operation, char *fileNameCopy, size_t fileNameCopySize)
 {
     FILE *file = NULL;
     char path[PATH_MAX];
@@ -327,7 +328,7 @@ void log_latencies(const char *scenario, const uint64_t *latencies_ns,
         return;
     }
     if (io_csv_open(&file, "06", "workload", scenario, path,
-                    sizeof(path), filenameCopy) != 0) {
+                    sizeof(path), fileNameCopy, fileNameCopySize) != 0) {
         perror("log_latencies: opening CSV");
         return;
     }
@@ -459,7 +460,7 @@ write_error:
     return -1;
 }
 
-static int ensure_file(const char *path, uint64_t size_bytes, size_t bsz) {
+int ensure_file(const char *path, uint64_t size_bytes, size_t bsz) {
 	struct stat st;
 	if (stat(path, &st) == 0 && (uint64_t)st.st_size >= size_bytes) {
 		return 0;

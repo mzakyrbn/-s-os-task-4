@@ -45,9 +45,17 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	char filepath[_MAX_PATH];
+	char filepath[PATH_MAX];
 	
 	snprintf(filepath, sizeof(filepath), "%s/testfile.dat", dir);
+
+	char logsPath[PATH_MAX];
+
+	if (io_write_environment_snapshot("06", logsPath, sizeof(logsPath)) != 0) {
+		perror("environment snapshot");
+	} else {
+		printf("Environment snapshot saved: %s\n", logsPath);
+	}
 
 	/* Filled by every mode, used by the shared reporting code afterwards. */
 	size_t bsz = (size_t)bs * 1024;
@@ -63,7 +71,7 @@ int main(int argc, char* argv[]) {
 	io_device_stats dev_before;
 	io_device_stats dev_after;
 	io_latency_stats lat_stats;
-	char *filename;
+	char filename[128];
 
 	/* Only the write modes truncate the file; read modes open it themselves. */
 	int fd = -1;
@@ -74,7 +82,7 @@ int main(int argc, char* argv[]) {
 	/* check mode */
 	if (strcmp(mode, "seqwrite") == 0) {
 		io_read_memory_metrics(&dirty_before, &writeback_before);
-		io_read_device_stats(dev, &dev_before);
+		io_read_device_stats(dev, &dev_before, mode);
 
 		char *buffer = malloc (bsz);
 		memset(buffer, 0, bsz);
@@ -94,16 +102,16 @@ int main(int argc, char* argv[]) {
 		elapsed_ns = now_ns() - start;
 
 		io_read_memory_metrics(&dirty_after, &writeback_after);
-		io_read_device_stats(dev, &dev_after);
+		io_read_device_stats(dev, &dev_after, mode);
 
-		log_latencies("seqwrite", lat, n_ops, bsz, filename);
+		log_latencies("seqwrite", lat, n_ops, bsz, filename, sizeof(filename));
 		free(buffer);
 		close(fd);
 	}
 
 	else if (strcmp(mode, "randwrite") == 0) {
 		io_read_memory_metrics(&dirty_before, &writeback_before);
-		io_read_device_stats(dev, &dev_before);
+		io_read_device_stats(dev, &dev_before, mode);
 
 		char *buffer = malloc (bsz);
 		memset(buffer, 0, bsz);
@@ -125,9 +133,9 @@ int main(int argc, char* argv[]) {
 		elapsed_ns = now_ns() - start;
 
 		io_read_memory_metrics(&dirty_after, &writeback_after);
-		io_read_device_stats(dev, &dev_after);
+		io_read_device_stats(dev, &dev_after, mode);
 
-		log_latencies("randwrite", lat, n_ops, bsz, filename);
+		log_latencies("randwrite", lat, n_ops, bsz, filename, sizeof(filename));
 		free(buffer);
 		close(fd);
 	}
@@ -165,7 +173,7 @@ int main(int argc, char* argv[]) {
 		elapsed_ns = now_ns() - start;
 		n_ops = done;
 
-		log_latencies("seqread", lat, n_ops, bsz, filename);
+		log_latencies("seqread", lat, n_ops, bsz, filename, sizeof(filename));
 		free(buf);
 		close(fd);
 	}
@@ -207,7 +215,7 @@ int main(int argc, char* argv[]) {
 		elapsed_ns = now_ns() - start;
 		n_ops = done;
 
-		log_latencies("randread", lat, n_ops, bsz, filename);
+		log_latencies("randread", lat, n_ops, bsz, filename, sizeof(filename));
 		free(buf);
 		close(fd);
 	}
@@ -220,29 +228,31 @@ int main(int argc, char* argv[]) {
 	uint64_t elapsed_s = elapsed_ns / 1e9;
 	char dev_label[64];
 	snprintf(dev_label, sizeof(dev_label), "%s stat", dev);
+	char difference_label[128];
+	snprintf(difference_label, sizeof(difference_label), "difference %s", dev);
 
-	uint64_t ios_delta = dev_after.ios - dev_before.ios;
-	uint64_t merges_delta = dev_after.merges - dev_before.merges;
-	uint64_t sectors_delta = dev_after.sectors - dev_before.sectors;
+	int64_t ios_delta = (int64_t)dev_after.ios - (int64_t)dev_before.ios;
+	int64_t merges_delta = (int64_t)dev_after.merges - (int64_t)dev_before.merges;
+	int64_t sectors_delta = (int64_t)dev_after.sectors - (int64_t)dev_before.sectors;
 	char *action = (strstr(mode, "write") != NULL) ? "write" : "read";
 
 	banner_call();
 	printf(
-		"\n[sebelum]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: %s ios %llu | %s merges %llu | %s sectors %llu\n",
+		"\n[sebelum]\n%-16s: %" PRIu64 " kB\n%-16s: %" PRIu64 " kB\n%-16s: %s ios %" PRIu64 " | %s merges %" PRIu64 " | %s sectors %" PRIu64 "\n",
 		"dirty", dirty_before, "Writeback", writeback_before, dev_label, action,
 		dev_before.ios, action, dev_before.merges, action, dev_before.sectors  
 	);
 	printf(
-		"\n[sesudah]\n%-16s: %llu kB\n%-16s: %llu kB\n%-16s: %s ios %llu | %s merges %llu | %s sectors %llu\n",
+		"\n[sesudah]\n%-16s: %" PRIu64 " kB\n%-16s: %" PRIu64 " kB\n%-16s: %s ios %" PRIu64 " | %s merges %" PRIu64 " | %s sectors %" PRIu64 "\n",
 		"dirty", dirty_after, "Writeback", writeback_after, dev_label, action,
 		dev_after.ios, action, dev_after.merges, action, dev_after.sectors  
 	);
 	printf(
-		"selisih %-16s: %s ios %+llu | %s merges %+llu | %s sectors %+llu",
-		dev, action, ios_delta, action, merges_delta, action, sectors_delta 
+		"difference %-16s: %s ios %+" PRId64 " | %s merges %+" PRId64 " | %s sectors %+" PRId64,
+		difference_label, action, ios_delta, action, merges_delta, action, sectors_delta
 	);
 	printf(
-		"%-16s: %" PRIu64 " s\n%-16s: %f MB/s\n%-16s: avg %llu | min %llu | max %llu | p50 %llu | p95 %llu | p99 %llu\n%-16s: %s",
+		"%-16s: %" PRIu64 " s\n%-16s: %f MB/s\n%-16s: avg %f | min %" PRIu64 " | max %" PRIu64 " | p50 %" PRIu64 " | p95 %" PRIu64 " | p99 %" PRIu64 "\n%-16s: %s",
 		"waktu eksekusi", elapsed_s, "Throughput", throughput, "Latensi (ns)", lat_stats.average_ns,
 		lat_stats.min_ns, lat_stats.max_ns, lat_stats.p50_ns, lat_stats.p95_ns, lat_stats.p99_ns, "Log", filename
 	);
