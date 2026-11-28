@@ -17,6 +17,7 @@
 #define PATH_MAX 4096
 #endif
 
+/* Makes text safe to use as one part of a log filename. */
 static const char *safe_token(const char *text, const char *fallback,char *buffer, size_t buffer_size)
 {
     size_t i;
@@ -35,6 +36,7 @@ static const char *safe_token(const char *text, const char *fallback,char *buffe
     return buffer;
 }
 
+/* Builds a timestamp string for uniquely named logs. */
 static int make_timestamp(char *buffer, size_t buffer_size)
 {
     struct timespec now;
@@ -54,6 +56,7 @@ static int make_timestamp(char *buffer, size_t buffer_size)
     return 0;
 }
 
+/* Creates logs/ if needed and confirms it is a directory. */
 static int ensure_logs_directory(void)
 {
     struct stat info;
@@ -69,7 +72,8 @@ static int ensure_logs_directory(void)
     return -1;
 }
 
-uint64_t io_now_ns(void)
+/* Returns the monotonic clock value in nanoseconds. */
+uint64_t now_ns(void)
 {
     struct timespec now;
 
@@ -80,11 +84,7 @@ uint64_t io_now_ns(void)
            (uint64_t)now.tv_nsec;
 }
 
-uint64_t now_ns(void)
-{
-    return io_now_ns();
-}
-
+/* Reads Dirty and Writeback memory values from /proc/meminfo. */
 int io_read_memory_metrics(uint64_t *dirty_kb, uint64_t *writeback_kb)
 {
     FILE *file;
@@ -128,6 +128,7 @@ int io_read_memory_metrics(uint64_t *dirty_kb, uint64_t *writeback_kb)
     return 0;
 }
 
+/* Reads read or write counters for a block device from sysfs. */
 int io_read_device_stats(const char *device, io_device_stats *stats, char *mode)
 {
     char path[PATH_MAX];
@@ -147,8 +148,7 @@ int io_read_device_stats(const char *device, io_device_stats *stats, char *mode)
             return -1;
         }
     }
-    if (snprintf(path, sizeof(path), "/sys/block/%s/stat", device) >=
-        (int)sizeof(path)) {
+    if (snprintf(path, sizeof(path), "/sys/block/%s/stat", device) >= (int)sizeof(path)) {
         errno = ENAMETOOLONG;
         return -1;
     }
@@ -182,6 +182,7 @@ int io_read_device_stats(const char *device, io_device_stats *stats, char *mode)
     return 0;
 }
 
+/* Compares two latency values for sorting. */
 static int compare_u64(const void *left, const void *right)
 {
     uint64_t a = *(const uint64_t *)left;
@@ -189,23 +190,21 @@ static int compare_u64(const void *left, const void *right)
     return (a > b) - (a < b);
 }
 
-static uint64_t nearest_rank(const uint64_t *sorted, size_t count,
-                             unsigned int percentile)
+/* Selects a percentile using the nearest-rank method. */
+static uint64_t nearest_rank(const uint64_t *sorted, size_t count, unsigned int percentile)
 {
-    size_t rank = (count / 100) * percentile +
-                  ((count % 100) * percentile + 99) / 100;
+    size_t rank = (count / 100) * percentile + ((count % 100) * percentile + 99) / 100;
     return sorted[rank - 1];
 }
 
-int io_compute_latency_stats(const uint64_t *samples_ns, size_t count,
-                             io_latency_stats *stats)
+/* Calculates average, range, and percentiles for latency samples. */
+int io_compute_latency_stats(const uint64_t *samples_ns, size_t count, io_latency_stats *stats)
 {
     uint64_t *sorted;
     long double total = 0.0L;
     size_t i;
 
-    if (samples_ns == NULL || stats == NULL || count == 0 ||
-        count > SIZE_MAX / sizeof(*sorted)) {
+    if (samples_ns == NULL || stats == NULL || count == 0 || count > SIZE_MAX / sizeof(*sorted)) {
         errno = EINVAL;
         return -1;
     }
@@ -229,6 +228,7 @@ int io_compute_latency_stats(const uint64_t *samples_ns, size_t count,
     return 0;
 }
 
+/* Creates a timestamped CSV in logs/ and writes its column header. */
 int io_csv_open(FILE **file, const char *group, const char *program, const char *scenario,
 	char *path, size_t path_size, char *fileNameCopy, size_t fileNameCopySize)
 {
@@ -271,6 +271,7 @@ int io_csv_open(FILE **file, const char *group, const char *program, const char 
     return 0;
 }
 
+/* Writes a CSV field, quoting it when it contains special characters. */
 static int write_csv_field(FILE *file, const char *text)
 {
     const unsigned char *cursor = (const unsigned char *)text;
@@ -296,6 +297,7 @@ static int write_csv_field(FILE *file, const char *text)
     return !quoted || fputc('"', file) != EOF ? 0 : -1;
 }
 
+/* Writes one operation's measurements as a CSV row. */
 int io_csv_write_row(FILE *file, uint64_t run_id, const char *scenario,
                      uint64_t op_index, uint64_t latency_ns, uint64_t bytes)
 {
@@ -315,6 +317,7 @@ int io_csv_write_row(FILE *file, uint64_t run_id, const char *scenario,
     return 0;
 }
 
+/* Writes all operation latencies for one workload scenario to CSV. */
 void log_latencies(const char *scenario, const uint64_t *latencies_ns, size_t count,
 	 			   size_t bytes_per_operation, char *fileNameCopy, size_t fileNameCopySize)
 {
@@ -327,15 +330,12 @@ void log_latencies(const char *scenario, const uint64_t *latencies_ns, size_t co
         perror("log_latencies");
         return;
     }
-    if (io_csv_open(&file, "06", "workload", scenario, path,
-                    sizeof(path), fileNameCopy, fileNameCopySize) != 0) {
+    if (io_csv_open(&file, "06", "workload", scenario, path, sizeof(path), fileNameCopy, fileNameCopySize) != 0) {
         perror("log_latencies: opening CSV");
         return;
     }
     for (i = 0; i < count; ++i) {
-        if (io_csv_write_row(file, 1, scenario, (uint64_t)i,
-                             latencies_ns[i],
-                             (uint64_t)bytes_per_operation) != 0) {
+        if (io_csv_write_row(file, 1, scenario, (uint64_t)i, latencies_ns[i], (uint64_t)bytes_per_operation) != 0) {
             perror("log_latencies: writing CSV row");
             fclose(file);
             return;
@@ -346,6 +346,7 @@ void log_latencies(const char *scenario, const uint64_t *latencies_ns, size_t co
     }
 }
 
+/* Copies one kernel setting into an environment snapshot. */
 static int write_sysctl_value(FILE *output, const char *label, const char *path)
 {
     char value[128];
@@ -363,8 +364,8 @@ static int write_sysctl_value(FILE *output, const char *label, const char *path)
     return fprintf(output, "%s : %s\n", label, value) < 0 ? -1 : 0;
 }
 
-int io_write_environment_snapshot(const char *group, char *path,
-                                  size_t path_size)
+/* Records kernel, memory, settings, and device information in a text log. */
+int io_write_environment_snapshot(const char *group, char *path, size_t path_size)
 {
     char group_name[64];
     char timestamp[48];
@@ -421,12 +422,9 @@ int io_write_environment_snapshot(const char *group, char *path,
         goto write_error;
     }
 
-    if (write_sysctl_value(output, "vm.dirty_ratio",
-                           "/proc/sys/vm/dirty_ratio") != 0 ||
-        write_sysctl_value(output, "vm.dirty_background_ratio",
-                           "/proc/sys/vm/dirty_background_ratio") != 0 ||
-        write_sysctl_value(output, "Read-ahead (loop0, kB)",
-                           "/sys/block/loop0/queue/read_ahead_kb") != 0) {
+    if (write_sysctl_value(output, "vm.dirty_ratio", "/proc/sys/vm/dirty_ratio") != 0 ||
+        write_sysctl_value(output, "vm.dirty_background_ratio", "/proc/sys/vm/dirty_background_ratio") != 0 ||
+        write_sysctl_value(output, "Read-ahead (loop0, kB)", "/sys/block/loop0/queue/read_ahead_kb") != 0) {
         goto write_error;
     }
     if (fputs("lsblk :\n", output) == EOF) {
@@ -460,6 +458,7 @@ write_error:
     return -1;
 }
 
+/* Creates or extends a file so read tests have enough data. */
 int ensure_file(const char *path, uint64_t size_bytes, size_t bsz) {
 	struct stat st;
 	if (stat(path, &st) == 0 && (uint64_t)st.st_size >= size_bytes) {

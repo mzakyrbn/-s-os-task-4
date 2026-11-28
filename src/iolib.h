@@ -24,10 +24,9 @@ typedef struct {
 } io_latency_stats;
 
 /* Returns CLOCK_MONOTONIC time in nanoseconds, or 0 if clock_gettime fails. */
-uint64_t io_now_ns(void);
-
-/* Compatibility names used by the current workload implementation. */
 uint64_t now_ns(void);
+
+/* Logs per-operation latencies for the current workload implementation. */
 void log_latencies(const char *scenario, const uint64_t *latencies_ns,
                    size_t count, size_t bytes_per_operation, char* fileNameCopy, size_t fileNameCopySize);
 
